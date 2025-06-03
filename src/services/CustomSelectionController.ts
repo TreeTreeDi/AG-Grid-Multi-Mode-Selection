@@ -175,32 +175,106 @@ export class CustomSelectionController {
     this.updateColumnSelection();
   }
 
-  // 更新列选择的视觉效果
+  // 更新列选择的视觉效果 (使用自定义CSS类)
   private updateColumnSelection(): void {
-    // 清除之前的范围选择
-    this.gridApi.clearRangeSelection();
+    // 1. 先清除所有列的自定义高亮
+    this.clearAllColumnHighlights();
 
-    // 为每个选中的列创建范围选择
+    // 2. 为当前选中的列添加高亮
     this.selectionState.selectedColumns.forEach(colId => {
       const column = this.columnApi.getColumn(colId);
       if (column) {
-        const displayedRowCount = this.gridApi.getDisplayedRowCount();
-        if (displayedRowCount > 0) {
-          // 为每个选中的列创建范围选择 (企业版功能)
-          // 在 Community 版本中，我们将不调用此 API 以避免错误
-          // 这意味着列选择的视觉反馈（整列高亮）将不会出现
-          /*
-          const cellRange: CellRangeParams = {
-            rowStartIndex: 0,
-            rowEndIndex: displayedRowCount - 1,
-            columnStart: column,
-            columnEnd: column
-          };
-          this.gridApi.addCellRange(cellRange);
-          */
-        }
+        this.addColumnHighlight(column);
       }
     });
+  }
+
+  // 清除所有列的自定义高亮
+  private clearAllColumnHighlights(): void {
+    const allColumns = this.columnApi.getAllDisplayedColumns();
+    allColumns?.forEach(column => {
+      this.removeColumnHighlight(column);
+    });
+  }
+
+  // 为指定列添加高亮
+  private addColumnHighlight(column: Column): void {
+    const colId = column.getColId();
+    this.gridApi.forEachNodeAfterFilterAndSort(rowNode => {
+      const cellElement = this.getCellElement(rowNode, colId);
+      if (cellElement) {
+        cellElement.classList.add('ag-column-selected-custom');
+      }
+    });
+
+    // 同时高亮列头
+    const headerElement = document.querySelector(`[col-id="${colId}"]`) as HTMLElement;
+    if (headerElement) {
+      headerElement.classList.add('ag-header-selected-custom');
+    }
+  }
+
+  // 移除指定列的高亮
+  private removeColumnHighlight(column: Column): void {
+    const colId = column.getColId();
+    this.gridApi.forEachNodeAfterFilterAndSort(rowNode => {
+      const cellElement = this.getCellElement(rowNode, colId);
+      if (cellElement) {
+        cellElement.classList.remove('ag-column-selected-custom');
+      }
+    });
+
+    // 同时移除列头高亮
+    const headerElement = document.querySelector(`[col-id="${colId}"]`) as HTMLElement;
+    if (headerElement) {
+      headerElement.classList.remove('ag-header-selected-custom');
+    }
+  }
+
+  // 获取单元格DOM元素
+  private getCellElement(rowNode: RowNode, colId: string): HTMLElement | null {
+    const rowIndex = rowNode.rowIndex;
+    if (rowIndex === null || rowIndex === undefined) {
+      return null;
+    }
+
+    // 首先尝试更精确的DOM查询
+    let cellElement = document.querySelector(
+      `.ag-center-cols-container [row-index="${rowIndex}"] [col-id="${colId}"]`
+    ) as HTMLElement;
+
+    if (!cellElement) {
+      // 尝试另一种选择器格式
+      cellElement = document.querySelector(
+        `[row-index="${rowIndex}"] .ag-cell[col-id="${colId}"]`
+      ) as HTMLElement;
+    }
+
+    if (!cellElement) {
+      // 尝试第三种选择器格式
+      cellElement = document.querySelector(
+        `.ag-row[row-index="${rowIndex}"] .ag-cell[col-id="${colId}"]`
+      ) as HTMLElement;
+    }
+
+    // 仍然保留原来的 getCellRendererInstances 作为最后的尝试
+    if (!cellElement) {
+      try {
+        const cellRendererInstances = this.gridApi.getCellRendererInstances({
+          rowNodes: [rowNode],
+          columns: [colId]
+        });
+        
+        if (cellRendererInstances && cellRendererInstances.length > 0) {
+          cellElement = cellRendererInstances[0].getGui();
+        }
+      } catch {
+        // 如果所有方法都失败，返回 null
+      }
+    }
+
+    console.log(`[CustomSelectionController] getCellElement for row ${rowIndex}, col ${colId}:`, cellElement ? 'found' : 'not found');
+    return cellElement;
   }
 
   // 清除其他选择
@@ -210,6 +284,7 @@ export class CustomSelectionController {
     }
     if (keepMode !== 'column') {
       this.selectionState.selectedColumns.clear();
+      this.clearAllColumnHighlights(); // 清除列高亮
     }
     if (keepMode !== 'cell') {
       // 只有在不保持单元格选择时才清除范围选择
@@ -275,6 +350,7 @@ export class CustomSelectionController {
     // clearRangeSelection 是企业版功能，在 Community 版本中不调用
     // this.gridApi.clearRangeSelection();
     this.selectionState.selectedColumns.clear();
+    this.clearAllColumnHighlights(); // 清除列高亮
     this.selectionState.lastClickedColumn = null;
     this.selectionState.lastClickedRow = null;
     this.selectionState.selectionMode = null;

@@ -225,6 +225,33 @@ kbd {
   --ag-range-selection-border-color: #1890ff;
 }
 
+/* 自定义列选择高亮样式 */
+.ag-theme-alpine .ag-column-selected-custom {
+  background-color: rgba(24, 144, 255, 0.2) !important;
+  outline: 2px solid #1890ff !important;
+  outline-offset: -2px !important;
+}
+
+
+/* 自定义列头选择高亮样式 */
+.ag-theme-alpine .ag-header-selected-custom {
+  background-color: #1890ff !important;
+  color: white !important;
+  font-weight: 600 !important;
+  border: 2px solid #0066cc !important;
+  box-shadow: 0 2px 4px rgba(24, 144, 255, 0.3) !important;
+}
+
+.ag-theme-alpine .ag-header-selected-custom .ag-header-cell-text {
+  color: white !important;
+}
+
+/* 列选择时的过渡效果 */
+.ag-theme-alpine .ag-column-selected-custom,
+.ag-theme-alpine .ag-header-selected-custom {
+  transition: all 0.2s ease-in-out;
+}
+
 /* 行号列特殊样式 */
 .ag-theme-alpine .ag-cell[col-id="rowNumber"] {
   background-color: #f6f8fa !important;

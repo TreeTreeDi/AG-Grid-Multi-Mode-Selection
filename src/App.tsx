@@ -1,13 +1,14 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { 
-  ColDef, 
-  GridReadyEvent, 
-  GridApi, 
+import type {
+  ColDef,
+  GridReadyEvent,
+  GridApi,
   ColumnApi,
   CellClickedEvent,
   GetContextMenuItemsParams,
-  MenuItemDef
+  MenuItemDef,
+  Column
 } from 'ag-grid-community';
 import 'ag-grid-community/dist/styles/ag-grid.css';
 import 'ag-grid-community/dist/styles/ag-theme-alpine.css';
@@ -32,8 +33,8 @@ interface RowData {
 }
 
 const App: React.FC = () => {
-  const [, setGridApi] = useState<GridApi | null>(null);
-  const [, setColumnApi] = useState<ColumnApi | null>(null);
+  const [gridApi, setGridApi] = useState<GridApi | null>(null);
+  const [columnApi, setColumnApi] = useState<ColumnApi | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<SelectionContext | null>(null);
 
   // 服务实例引用
@@ -158,17 +159,6 @@ const App: React.FC = () => {
     selectionControllerRef.current = selectionController;
     copyHandlerRef.current = copyHandler;
     contextMenuProviderRef.current = contextMenuProvider;
-
-    // 设置列头点击事件监听器
-    params.columnApi.getAllColumns()?.forEach(column => {
-      const headerElement = document.querySelector(`[col-id="${column.getColId()}"]`);
-      if (headerElement) {
-        headerElement.addEventListener('click', (event) => {
-          selectionController.onHeaderClicked(column, event as MouseEvent);
-          updateSelectionInfo();
-        });
-      }
-    });
   }, []);
 
   // 单元格点击处理
@@ -195,6 +185,43 @@ const App: React.FC = () => {
       setSelectionInfo(context);
     }
   }, []);
+
+  // 管理列头点击事件监听器
+  useEffect(() => {
+    if (columnApi && selectionControllerRef.current) {
+      const columns = columnApi.getAllColumns();
+      const listeners: Array<{ column: Column; element: HTMLElement; listener: EventListener }> = [];
+
+      columns?.forEach(column => {
+        // 通过DOM方式添加事件监听器
+        setTimeout(() => {
+          const headerElement = document.querySelector(`[col-id="${column.getColId()}"]`) as HTMLElement;
+          if (headerElement) {
+            const listener: EventListener = (event) => {
+              const mouseEvent = event as MouseEvent;
+              // 确保是鼠标左键点击
+              if (mouseEvent.button === 0) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectionControllerRef.current!.onHeaderClicked(column, mouseEvent);
+                updateSelectionInfo();
+              }
+            };
+            
+            headerElement.addEventListener('click', listener);
+            listeners.push({ column, element: headerElement, listener });
+          }
+        }, 100); // 稍微延迟以确保DOM已渲染
+      });
+
+      return () => {
+        // 清理事件监听器
+        listeners.forEach(({ element, listener }) => {
+          element.removeEventListener('click', listener);
+        });
+      };
+    }
+  }, [columnApi, updateSelectionInfo]);
 
   // 清除所有选择
   const clearAllSelections = useCallback(() => {
