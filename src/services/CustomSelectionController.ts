@@ -21,7 +21,9 @@ export class CustomSelectionController {
       selectedColumns: new Set(),
       lastClickedColumn: null,
       lastClickedRow: null,
-      selectionMode: null
+      selectionMode: null,
+      selectedCellIds: new Set(),
+      lastClickedCellPosition: null
     };
   }
 
@@ -114,28 +116,50 @@ export class CustomSelectionController {
     this.updateColumnSelection();
   }
 
-  // 单元格选择处理
+  // 单元格选择处理（保留原有接口，内部调用新的handleCellClick）
   private handleCellSelection(params: CellClickedEvent, isShiftKey: boolean, isCtrlKey: boolean): void {
+    this.handleCellClick(params, isShiftKey, isCtrlKey);
+  }
+
+  // 手动单元格点击处理
+  private handleCellClick(params: CellClickedEvent, isShiftKey: boolean, isCtrlKey: boolean): void {
+    const { rowIndex, column } = params;
+    if (rowIndex === null || rowIndex === undefined || !column) return; // 无效点击
+
+    const colId = column.getColId();
+    const cellId = this.getCellId(rowIndex, colId);
+
+    // 前置处理
     this.clearOtherSelections('cell');
     this.selectionState.selectionMode = 'cell';
 
-    if (!isShiftKey && !isCtrlKey) {
-      // 单选单元格：清除其他范围选择
-      this.gridApi.clearRangeSelection();
+    if (isCtrlKey) {
+      // Ctrl+点击：切换当前单元格的选中状态
+      if (this.selectionState.selectedCellIds.has(cellId)) {
+        this.selectionState.selectedCellIds.delete(cellId);
+      } else {
+        this.selectionState.selectedCellIds.add(cellId);
+      }
+      this.selectionState.lastClickedCellPosition = { rowIndex, colId };
+    } else if (isShiftKey && this.selectionState.lastClickedCellPosition) {
+      // Shift+点击：范围选择
+      const currentCellPos = { rowIndex, colId };
+      const rangeCellIds = this.getCellsInRectangularRange(
+        this.selectionState.lastClickedCellPosition,
+        currentCellPos
+      );
+      this.selectionState.selectedCellIds.clear();
+      rangeCellIds.forEach(id => this.selectionState.selectedCellIds.add(id));
+      // Shift选择通常不更新锚点，保持原有的lastClickedCellPosition
+    } else {
+      // 普通单击：清除其他选择并选中当前单元格
+      this.selectionState.selectedCellIds.clear();
+      this.selectionState.selectedCellIds.add(cellId);
+      this.selectionState.lastClickedCellPosition = { rowIndex, colId };
     }
 
-    // 使用 addCellRange API 添加单元格选择 (企业版功能)
-    // 在 Community 版本中，我们将不调用此 API 以避免错误
-    // 这意味着单元格选择的视觉反馈（范围高亮）将不会出现
-    /*
-    const cellRange: CellRangeParams = {
-      rowStartIndex: params.rowIndex,
-      rowEndIndex: params.rowIndex,
-      columnStart: params.column,
-      columnEnd: params.column
-    };
-    this.gridApi.addCellRange(cellRange);
-    */
+    // 更新视觉高亮
+    this.updateManualCellHighlights();
   }
 
   // 选择行范围
@@ -287,21 +311,9 @@ export class CustomSelectionController {
       this.clearAllColumnHighlights(); // 清除列高亮
     }
     if (keepMode !== 'cell') {
-      // 只有在不保持单元格选择时才清除范围选择
-      // 注意：列选择也使用范围选择，所以需要小心处理
-      if (keepMode !== 'column') {
-        // clearRangeSelection 是企业版功能，在 Community 版本中不应调用
-        // if (this.gridApi) {
-        //   try {
-        //     this.gridApi.clearRangeSelection();
-        //     console.log('[CustomSelectionController] Range selection cleared successfully.');
-        //   } catch (error) {
-        //     console.error('[CustomSelectionController] Error clearing range selection:', error);
-        //   }
-        // } else {
-        //   console.warn('[CustomSelectionController] Grid API not available when trying to clear range selection.');
-        // }
-      }
+      this.selectionState.selectedCellIds.clear();
+      this.selectionState.lastClickedCellPosition = null;
+      this.updateManualCellHighlights(); // 清除单元格高亮
     }
   }
 
@@ -323,18 +335,18 @@ export class CustomSelectionController {
       selectionMode: this.selectionState.selectionMode,
       hasSelectedRows: selectedRows.length > 0,
       hasSelectedColumns: this.selectionState.selectedColumns.size > 0,
-      hasSelectedCells: cellRanges.length > 0,
+      hasSelectedCells: this.selectionState.selectedCellIds.size > 0 || cellRanges.length > 0,
       selectedRowCount: selectedRows.length,
       selectedColumnCount: this.selectionState.selectedColumns.size,
-      cellRangeCount: cellRanges.length,
+      cellRangeCount: this.selectionState.selectedCellIds.size > 0 ? this.selectionState.selectedCellIds.size : cellRanges.length,
       
       // 详细信息
       selectedRows: selectedRows,
       selectedColumns: Array.from(this.selectionState.selectedColumns),
-      cellRanges: cellRanges,
+      cellRanges: cellRanges, // 保留原有的cellRanges字段，但主要使用selectedCellIds
       
       // 判断是否为单个单元格
-      isSingleCell: cellRanges.length === 1 && this.isSingleCellRange(cellRanges[0])
+      isSingleCell: this.selectionState.selectedCellIds.size === 1 || (cellRanges.length === 1 && this.isSingleCellRange(cellRanges[0]))
     };
   }
 
@@ -351,9 +363,86 @@ export class CustomSelectionController {
     // this.gridApi.clearRangeSelection();
     this.selectionState.selectedColumns.clear();
     this.clearAllColumnHighlights(); // 清除列高亮
+    this.selectionState.selectedCellIds.clear();
+    this.updateManualCellHighlights(); // 清除单元格高亮
     this.selectionState.lastClickedColumn = null;
     this.selectionState.lastClickedRow = null;
+    this.selectionState.lastClickedCellPosition = null;
     this.selectionState.selectionMode = null;
+  }
+
+  // 单元格选择辅助方法
+  private getCellId(rowIndex: number, colId: string): string {
+    return `${rowIndex}_${colId}`;
+  }
+
+  private parseCellId(cellId: string): { rowIndex: number; colId: string } | null {
+    const parts = cellId.split('_');
+    if (parts.length === 2) {
+      const rowIndex = parseInt(parts[0], 10);
+      if (!isNaN(rowIndex)) {
+        return { rowIndex, colId: parts[1] };
+      }
+    }
+    return null;
+  }
+
+  // 计算矩形范围内的所有单元格
+  private getCellsInRectangularRange(
+    startPos: { rowIndex: number; colId: string },
+    endPos: { rowIndex: number; colId: string }
+  ): string[] {
+    const cells: string[] = [];
+    const allDisplayedColumns = this.columnApi.getAllDisplayedColumns();
+    const colStartIndex = allDisplayedColumns.findIndex(c => c.getColId() === startPos.colId);
+    const colEndIndex = allDisplayedColumns.findIndex(c => c.getColId() === endPos.colId);
+
+    if (colStartIndex === -1 || colEndIndex === -1) return []; // 列无效
+
+    const minRow = Math.min(startPos.rowIndex, endPos.rowIndex);
+    const maxRow = Math.max(startPos.rowIndex, endPos.rowIndex);
+    const minColIdx = Math.min(colStartIndex, colEndIndex);
+    const maxColIdx = Math.max(colStartIndex, colEndIndex);
+
+    for (let r = minRow; r <= maxRow; r++) {
+      // 确保行存在且可见
+      const rowNode = this.gridApi.getDisplayedRowAtIndex(r);
+      if (rowNode) {
+        for (let c = minColIdx; c <= maxColIdx; c++) {
+          cells.push(this.getCellId(r, allDisplayedColumns[c].getColId()));
+        }
+      }
+    }
+    return cells;
+  }
+
+  // 更新手动单元格高亮
+  private updateManualCellHighlights(): void {
+    // 1. 清除所有单元格的自定义高亮
+    this.gridApi.forEachNode(node => {
+      if (node.displayed) { // 只处理显示的节点
+        this.columnApi.getAllDisplayedColumns().forEach(column => {
+          const cellElement = this.getCellElement(node, column.getColId());
+          if (cellElement) {
+            cellElement.classList.remove('ag-cell-selected-manual');
+          }
+        });
+      }
+    });
+
+    // 2. 为 selectedCellIds 中的单元格添加高亮
+    this.selectionState.selectedCellIds.forEach(cellId => {
+      const cellInfo = this.parseCellId(cellId);
+      if (cellInfo) {
+        const rowNode = this.gridApi.getDisplayedRowAtIndex(cellInfo.rowIndex);
+        if (rowNode) {
+          const cellElement = this.getCellElement(rowNode, cellInfo.colId);
+          if (cellElement) {
+            cellElement.classList.add('ag-cell-selected-manual');
+          }
+        }
+      }
+    });
   }
 
   // 获取选择的数据
@@ -366,7 +455,7 @@ export class CustomSelectionController {
       case 'column':
         return this.getSelectedColumnData();
       case 'cell':
-        return this.getSelectedCellData();
+        return this.getSelectedManualCellData();
       default:
         return null;
     }
@@ -390,17 +479,23 @@ export class CustomSelectionController {
     return data;
   }
 
-  // 获取选中的单元格数据
-  private getSelectedCellData(): unknown[][] {
-    const cellRanges = this.gridApi.getCellRanges();
-    if (!cellRanges || cellRanges.length === 0) return [];
 
-    // 使用 AG Grid 的内置方法获取范围数据
+  // 获取手动选中单元格的数据（基于selectedCellIds）
+  private getSelectedManualCellData(): unknown[][] {
     const data: unknown[][] = [];
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    cellRanges.forEach(_range => {
-      // 这里需要根据实际的 AG Grid API 来实现
-      // 暂时返回空数组，在实际使用时会通过复制功能处理
+    
+    this.selectionState.selectedCellIds.forEach(cellId => {
+      const cellInfo = this.parseCellId(cellId);
+      if (cellInfo) {
+        const rowNode = this.gridApi.getDisplayedRowAtIndex(cellInfo.rowIndex);
+        if (rowNode) {
+          const column = this.columnApi.getColumn(cellInfo.colId);
+          if (column) {
+            const value = this.gridApi.getValue(column, rowNode);
+            data.push([value]);
+          }
+        }
+      }
     });
 
     return data;

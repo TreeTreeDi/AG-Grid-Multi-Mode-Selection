@@ -7,6 +7,9 @@ export interface SelectionState {
   lastClickedColumn: Column | null;
   lastClickedRow: RowNode | null;
   selectionMode: SelectionMode | null;
+  // 单元格选择相关状态
+  selectedCellIds: Set<string>; // 存储 "rowIndex_colId" 格式的单元格ID
+  lastClickedCellPosition: { rowIndex: number; colId: string } | null;
 }
 
 export interface SelectionContext {

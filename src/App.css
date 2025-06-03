@@ -252,6 +252,18 @@ kbd {
   transition: all 0.2s ease-in-out;
 }
 
+/* 手动单元格选择高亮样式 */
+.ag-theme-alpine .ag-cell-selected-manual {
+  background-color: rgba(24, 144, 255, 0.25) !important;
+}
+
+
+
+/* 单元格选择时的过渡效果 */
+.ag-theme-alpine .ag-cell-selected-manual {
+  transition: background-color 0.2s ease-in-out;
+}
+
 /* 行号列特殊样式 */
 .ag-theme-alpine .ag-cell[col-id="rowNumber"] {
   background-color: #f6f8fa !important;
