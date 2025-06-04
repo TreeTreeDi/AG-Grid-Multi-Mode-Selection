@@ -207,6 +207,12 @@ const App: React.FC = () => {
     const colId = target.getAttribute('col-id');
     if (!colId) return null;
 
+    // 过滤掉行号列，避免与行选择冲突
+    if (colId === 'rowNumber') {
+      return null;
+    }
+    
+
     // 从单元格元素获取行索引
     let rowElement = target;
     while (rowElement && !rowElement.classList.contains('ag-row')) {

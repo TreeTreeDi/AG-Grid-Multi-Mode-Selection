@@ -301,7 +301,6 @@ export class CustomSelectionController {
       }
     }
 
-    console.log(`[CustomSelectionController] getCellElement for row ${rowIndex}, col ${colId}:`, cellElement ? 'found' : 'not found');
     return cellElement;
   }
 
