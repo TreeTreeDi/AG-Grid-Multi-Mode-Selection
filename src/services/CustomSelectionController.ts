@@ -539,7 +539,7 @@ export class CustomSelectionController {
   }
 
   // 拖拽处理方法 - 当鼠标在 document 上移动时由 App.tsx 调用（如果拖拽已开始）
-  public onTableMouseMove(event: MouseEvent, currentGridCell: {rowIndex: number, colId: string} | null): void {
+  public onTableMouseMove(currentGridCell: {rowIndex: number, colId: string} | null): void {
     if (!this.selectionState.dragStartState?.dragging) return;
 
     if (currentGridCell) {
