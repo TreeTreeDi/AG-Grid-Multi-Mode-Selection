@@ -23,7 +23,8 @@ export class CustomSelectionController {
       lastClickedRow: null,
       selectionMode: null,
       selectedCellIds: new Set(),
-      lastClickedCellPosition: null
+      lastClickedCellPosition: null,
+      dragStartState: null
     };
   }
 
@@ -125,6 +126,9 @@ export class CustomSelectionController {
   private handleCellClick(params: CellClickedEvent, isShiftKey: boolean, isCtrlKey: boolean): void {
     const { rowIndex, column } = params;
     if (rowIndex === null || rowIndex === undefined || !column) return; // 无效点击
+
+    // 如果正在拖拽，忽略点击事件（避免与拖拽操作冲突）
+    if (this.selectionState.dragStartState?.dragging) return;
 
     const colId = column.getColId();
     const cellId = this.getCellId(rowIndex, colId);
@@ -313,6 +317,7 @@ export class CustomSelectionController {
     if (keepMode !== 'cell') {
       this.selectionState.selectedCellIds.clear();
       this.selectionState.lastClickedCellPosition = null;
+      this.selectionState.dragStartState = null;
       this.updateManualCellHighlights(); // 清除单元格高亮
     }
   }
@@ -368,6 +373,7 @@ export class CustomSelectionController {
     this.selectionState.lastClickedColumn = null;
     this.selectionState.lastClickedRow = null;
     this.selectionState.lastClickedCellPosition = null;
+    this.selectionState.dragStartState = null;
     this.selectionState.selectionMode = null;
   }
 
@@ -414,6 +420,15 @@ export class CustomSelectionController {
       }
     }
     return cells;
+  }
+
+  // 比较两个 Set 是否相等（用于性能优化）
+  private areSetsEqual<T>(setA: Set<T>, setB: Set<T>): boolean {
+    if (setA.size !== setB.size) return false;
+    for (const item of setA) {
+      if (!setB.has(item)) return false;
+    }
+    return true;
   }
 
   // 更新手动单元格高亮
@@ -499,5 +514,57 @@ export class CustomSelectionController {
     });
 
     return data;
+  }
+
+  // 拖拽处理方法 - 当在表格上按下鼠标时由 App.tsx 调用
+  public onTableMouseDown(event: MouseEvent, gridCell: {rowIndex: number, colId: string, node: RowNode, column: Column} | null): boolean {
+    if (!gridCell) return false;
+
+    this.clearOtherSelections('cell');
+    this.selectionState.selectionMode = 'cell';
+    
+    this.selectionState.selectedCellIds.clear();
+    const cellId = this.getCellId(gridCell.rowIndex, gridCell.colId);
+    this.selectionState.selectedCellIds.add(cellId);
+    
+    this.selectionState.dragStartState = {
+      startRowIndex: gridCell.rowIndex,
+      startColId: gridCell.colId,
+      dragging: true
+    };
+    this.selectionState.lastClickedCellPosition = { rowIndex: gridCell.rowIndex, colId: gridCell.colId };
+    
+    this.updateManualCellHighlights();
+    event.preventDefault(); // 阻止默认的文本选择等行为
+    return true;
+  }
+
+  // 拖拽处理方法 - 当鼠标在 document 上移动时由 App.tsx 调用（如果拖拽已开始）
+  public onTableMouseMove(event: MouseEvent, currentGridCell: {rowIndex: number, colId: string} | null): void {
+    if (!this.selectionState.dragStartState?.dragging) return;
+
+    if (currentGridCell) {
+      const { startRowIndex, startColId } = this.selectionState.dragStartState;
+      const rangeCellIds = this.getCellsInRectangularRange(
+        { rowIndex: startRowIndex, colId: startColId },
+        { rowIndex: currentGridCell.rowIndex, colId: currentGridCell.colId }
+      );
+      
+      // 优化：只有当选择范围实际改变时才更新，以减少不必要的重绘
+      const newSelectedCellIds = new Set(rangeCellIds);
+      if (!this.areSetsEqual(this.selectionState.selectedCellIds, newSelectedCellIds)) {
+          this.selectionState.selectedCellIds = newSelectedCellIds;
+          this.updateManualCellHighlights();
+      }
+    }
+    // 如果 currentGridCell 为 null (鼠标移出表格有效单元格区域)，保持上一次的有效选择
+  }
+
+  // 拖拽处理方法 - 当在 document 上释放鼠标时由 App.tsx 调用（如果拖拽已开始）
+  public onTableMouseUp(): void {
+    if (this.selectionState.dragStartState?.dragging) {
+      // 最终的选择状态已在 mousemove 中更新
+      this.selectionState.dragStartState = null;
+    }
   }
 }

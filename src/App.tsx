@@ -8,7 +8,8 @@ import type {
   CellClickedEvent,
   GetContextMenuItemsParams,
   MenuItemDef,
-  Column
+  Column,
+  RowNode
 } from 'ag-grid-community';
 import 'ag-grid-community/dist/styles/ag-grid.css';
 import 'ag-grid-community/dist/styles/ag-theme-alpine.css';
@@ -41,6 +42,9 @@ const App: React.FC = () => {
   const selectionControllerRef = useRef<CustomSelectionController | null>(null);
   const copyHandlerRef = useRef<CopyHandler | null>(null);
   const contextMenuProviderRef = useRef<ContextMenuProvider | null>(null);
+  
+  // 表格容器引用（用于拖拽事件绑定）
+  const gridContainerRef = useRef<HTMLDivElement>(null);
 
   // 示例数据
   const rowData: RowData[] = useMemo(() => [
@@ -186,6 +190,52 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // 从鼠标事件获取单元格信息（用于拖拽功能）
+  const getCellInfoFromMouseEvent = useCallback((event: MouseEvent): {rowIndex: number, colId: string, node: RowNode, column: Column} | null => {
+    if (!gridApi || !columnApi) return null;
+
+    // 从事件目标查找最近的单元格元素
+    let target = event.target as HTMLElement;
+    while (target && !target.classList.contains('ag-cell')) {
+      target = target.parentElement as HTMLElement;
+      if (!target || target === document.body) return null;
+    }
+
+    if (!target) return null;
+
+    // 从单元格元素获取列ID
+    const colId = target.getAttribute('col-id');
+    if (!colId) return null;
+
+    // 从单元格元素获取行索引
+    let rowElement = target;
+    while (rowElement && !rowElement.classList.contains('ag-row')) {
+      rowElement = rowElement.parentElement as HTMLElement;
+      if (!rowElement || rowElement === document.body) return null;
+    }
+
+    if (!rowElement) return null;
+    
+    const rowIndexAttr = rowElement.getAttribute('row-index');
+    if (!rowIndexAttr) return null;
+    
+    const rowIndex = parseInt(rowIndexAttr, 10);
+    if (isNaN(rowIndex)) return null;
+
+    // 获取对应的 RowNode 和 Column 对象
+    const rowNode = gridApi.getDisplayedRowAtIndex(rowIndex);
+    const column = columnApi.getColumn(colId);
+
+    if (!rowNode || !column) return null;
+
+    return {
+      rowIndex,
+      colId,
+      node: rowNode,
+      column
+    };
+  }, [gridApi, columnApi]);
+
   // 管理列头点击事件监听器
   useEffect(() => {
     if (columnApi && selectionControllerRef.current) {
@@ -222,6 +272,46 @@ const App: React.FC = () => {
       };
     }
   }, [columnApi, updateSelectionInfo]);
+
+  // 管理拖拽事件监听器
+  useEffect(() => {
+    if (gridApi && columnApi && selectionControllerRef.current && gridContainerRef.current) {
+      const gridContainer = gridContainerRef.current;
+      
+      const handleGridMouseDown = (event: MouseEvent) => {
+        const targetCell = getCellInfoFromMouseEvent(event);
+        if (targetCell && selectionControllerRef.current?.onTableMouseDown(event, targetCell)) {
+          // 拖拽开始，添加 document 级别的监听器
+          const handleDocumentMouseMove = (moveEvent: MouseEvent) => {
+            const currentCell = getCellInfoFromMouseEvent(moveEvent);
+            selectionControllerRef.current?.onTableMouseMove(moveEvent, currentCell);
+          };
+
+          const handleDocumentMouseUp = () => {
+            selectionControllerRef.current?.onTableMouseUp();
+            updateSelectionInfo();
+            // 移除 document 监听器
+            document.removeEventListener('mousemove', handleDocumentMouseMove);
+            document.removeEventListener('mouseup', handleDocumentMouseUp);
+          };
+
+          // 添加 document 监听器
+          document.addEventListener('mousemove', handleDocumentMouseMove);
+          document.addEventListener('mouseup', handleDocumentMouseUp);
+          
+          updateSelectionInfo();
+        }
+      };
+
+      gridContainer.addEventListener('mousedown', handleGridMouseDown);
+
+      return () => {
+        gridContainer.removeEventListener('mousedown', handleGridMouseDown);
+        // 注意：document 上的动态监听器会在 mouseup 时自动移除
+        // 这里只需要移除容器上的监听器即可
+      };
+    }
+  }, [gridApi, columnApi, getCellInfoFromMouseEvent, updateSelectionInfo]);
 
   // 清除所有选择
   const clearAllSelections = useCallback(() => {
@@ -349,7 +439,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <div className="ag-theme-alpine grid-container">
+      <div className="ag-theme-alpine grid-container" ref={gridContainerRef}>
         <AgGridReact
           rowData={rowData}
           columnDefs={columnDefs}

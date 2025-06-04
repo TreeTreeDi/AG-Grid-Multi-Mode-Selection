@@ -10,6 +10,11 @@ export interface SelectionState {
   // 单元格选择相关状态
   selectedCellIds: Set<string>; // 存储 "rowIndex_colId" 格式的单元格ID
   lastClickedCellPosition: { rowIndex: number; colId: string } | null;
+  dragStartState: {
+    startRowIndex: number;
+    startColId: string;
+    dragging: boolean;
+  } | null;
 }
 
 export interface SelectionContext {
