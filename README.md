@@ -1,54 +1,57 @@
-# React + TypeScript + Vite
+# ag-grid-mini-select
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AG-Grid 多模式选择演示项目
 
-Currently, two official plugins are available:
+本项目基于 AG Grid Community 版本，演示了如何实现自定义的多模式选择（行、列、单元格、范围）功能，并支持复制、清除、右键菜单等常用操作。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 功能特性
+- 支持行、列、单元格的单选、多选、范围选择（Shift/Ctrl/拖拽）
+- 支持自定义列头点击事件，实现列选择
+- 支持右键菜单，按选择类型显示不同菜单项
+- 支持复制选中内容到剪贴板
+- 支持清除所有选择
+- 兼容 AG Grid Community 版本（不依赖企业版 API）
 
-## Expanding the ESLint configuration
+## 快速开始
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. 安装依赖：
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+```bash
+pnpm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. 启动开发服务器：
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
+```bash
+pnpm dev
 ```
+
+3. 访问页面：
+
+浏览器打开 http://localhost:5173
+
+## 主要文件说明
+- `src/App.tsx`：主页面，包含表格渲染与交互逻辑
+- `src/services/CustomSelectionController.ts`：自定义选择控制器，核心多模式选择逻辑
+- `src/services/CopyHandler.ts`：复制功能实现
+- `src/services/ContextMenuProvider.ts`：右键菜单实现
+- `src/types/selection.ts`：选择相关类型定义
+
+## 选择操作说明
+- **行选择**：点击行号列，Ctrl 多选，Shift 范围多选
+- **列选择**：点击列头，Ctrl 多选，Shift 范围多选
+- **单元格选择**：点击单元格，Ctrl 多选，Shift 范围多选，支持拖拽
+- **右键菜单**：根据选择类型显示不同菜单，支持复制等操作
+
+## 自定义样式
+选中后的高亮样式由 AG Grid 主题（如 `ag-theme-alpine`）控制。可通过覆盖 CSS 类（如 `.ag-row-selected`、`.ag-cell-range-selected`）自定义选中效果。
+
+## 适用场景
+- 需要 Excel 类似多模式选择体验的表格应用
+- 需要自定义选择、复制、右键菜单等高级交互的 React/AG Grid 项目
+
+---
+
+如有问题或建议，欢迎提 issue 或 PR！
+
+---
