@@ -31,14 +31,8 @@ export class CustomSelectionController {
   // 核心方法：处理单元格点击
   onCellClicked = (params: CellClickedEvent): void => {
     const { node, event } = params;
-    console.log('🔧 CustomSelectionController.onCellClicked 被调用:', {
-      rowIndex: params.rowIndex,
-      colId: params.column?.getColId(),
-      isRowNumberColumn: this.isRowNumberColumn(params)
-    });
-    
+
     if (this.isRowNumberColumn(params)) {
-      console.log('📊 处理行选择');
       if (event && 'shiftKey' in event && 'ctrlKey' in event && 'metaKey' in event) {
         const mouseEvent = event as MouseEvent;
         this.handleRowSelection(node, mouseEvent.shiftKey, mouseEvent.ctrlKey || mouseEvent.metaKey);
@@ -46,7 +40,6 @@ export class CustomSelectionController {
         this.handleRowSelection(node, false, false);
       }
     } else {
-      console.log('🔳 处理单元格选择');
       if (event && 'shiftKey' in event && 'ctrlKey' in event && 'metaKey' in event) {
         const mouseEvent = event as MouseEvent;
         this.handleCellSelection(params, mouseEvent.shiftKey, mouseEvent.ctrlKey || mouseEvent.metaKey);
@@ -135,7 +128,10 @@ export class CustomSelectionController {
     if (rowIndex === null || rowIndex === undefined || !column) return; // 无效点击
 
     // 如果正在拖拽，忽略点击事件（避免与拖拽操作冲突）
-    if (this.selectionState.dragStartState?.dragging) return;
+    if (this.selectionState.dragStartState?.dragging && event?.type === 'click') {
+        return;
+    }
+    console.log(`🔧 handleCellClick: Called with isShiftKey=${isShiftKey}, isCtrlKey=${isCtrlKey}. Current shiftSelectionAnchorCell: ${JSON.stringify(this.selectionState.shiftSelectionAnchorCell)}`);
 
     const colId = column.getColId();
     const cellId = this.getCellId(rowIndex, colId);
@@ -148,7 +144,6 @@ export class CustomSelectionController {
 
     if (isCtrlKey) {
       // Ctrl+点击：切换当前单元格的选中状态
-      console.log('🔳 Ctrl+点击切换单元格选中状态，保持锚点:', this.selectionState.shiftSelectionAnchorCell);
       if (this.selectionState.selectedCellIds.has(cellId)) {
         this.selectionState.selectedCellIds.delete(cellId);
       } else {
@@ -158,21 +153,24 @@ export class CustomSelectionController {
       this.selectionState.lastClickedCellPosition = { rowIndex, colId };
     } else if (isShiftKey && this.selectionState.shiftSelectionAnchorCell) {
       // Shift+点击：使用shiftSelectionAnchorCell作为范围选择的起始点
-      console.log('🔳 Shift+点击范围选择，锚点:', this.selectionState.shiftSelectionAnchorCell);
       const currentCellPos = { rowIndex, colId };
       const rangeCellIds = this.getCellsInRectangularRange(
         this.selectionState.shiftSelectionAnchorCell, // 使用专门的Shift锚点
         currentCellPos
       );
-      console.log('📦 计算范围:', rangeCellIds);
       // 对于Shift选择，清除之前的单元格选择，然后应用新的范围
       this.selectionState.selectedCellIds.clear();
       rangeCellIds.forEach(id => this.selectionState.selectedCellIds.add(id));
       // Shift点击不更新shiftSelectionAnchorCell，但更新lastClickedCellPosition
       this.selectionState.lastClickedCellPosition = { rowIndex, colId };
+    } else if (isShiftKey && !this.selectionState.shiftSelectionAnchorCell) {
+      this.selectionState.selectedCellIds.clear();
+      this.selectionState.selectedCellIds.add(cellId);
+      this.selectionState.lastClickedCellPosition = { rowIndex, colId };
+      // 在这种情况下，也应该将当前点击设置为新的锚点
+      this.selectionState.shiftSelectionAnchorCell = { rowIndex, colId };
     } else {
-      // 普通单击（或Shift点击但没有锚点）
-      console.log('🔳 普通单击选择单元格');
+      // 普通单击
       this.selectionState.selectedCellIds.clear();
       this.selectionState.selectedCellIds.add(cellId);
       // 更新lastClickedCellPosition和shiftSelectionAnchorCell
@@ -533,18 +531,12 @@ export class CustomSelectionController {
   // 拖拽处理方法 - 当在表格上按下鼠标时由 App.tsx 调用
   public onTableMouseDown(event: MouseEvent, gridCell: {rowIndex: number, colId: string, node: RowNode, column: Column} | null): boolean {
     if (!gridCell) return false;
-    console.log('🔳 CustomSelectionController.onTableMouseDown 被调用:', {
-      rowIndex: gridCell.rowIndex,
-      colId: gridCell.colId
-    });
     
     this.clearOtherSelections('cell');
     this.selectionState.selectionMode = 'cell';
     
-    this.selectionState.selectedCellIds.clear();
-    const cellId = this.getCellId(gridCell.rowIndex, gridCell.colId);
-    this.selectionState.selectedCellIds.add(cellId);
-    
+    // selectedCellIds 的修改将由 handleCellClick 或 onTableMouseMove 处理
+    // 确保 dragStartState 被正确设置
     this.selectionState.dragStartState = {
       startRowIndex: gridCell.rowIndex,
       startColId: gridCell.colId,
@@ -553,7 +545,6 @@ export class CustomSelectionController {
     
     // 拖拽开始时，只更新 lastClickedCellPosition，不更新 shiftSelectionAnchorCell
     this.selectionState.lastClickedCellPosition = { rowIndex: gridCell.rowIndex, colId: gridCell.colId };
-    console.log('🔳 拖拽开始，保持锚点:', this.selectionState.shiftSelectionAnchorCell);
     this.updateManualCellHighlights();
     event.preventDefault(); // 阻止默认的文本选择等行为
     return true;
@@ -584,17 +575,11 @@ export class CustomSelectionController {
   public onTableMouseUp(): void {
     if (this.selectionState.dragStartState?.dragging) {
       const { startRowIndex, startColId } = this.selectionState.dragStartState;
-      const dragStartCellId = this.getCellId(startRowIndex, startColId);
 
       let wasActualDrag = false;
       // 检查选择是否从 onTableMouseDown 中设置的初始单个单元格发生了变化
       if (this.selectionState.selectedCellIds.size > 1) {
         wasActualDrag = true;
-      } else if (this.selectionState.selectedCellIds.size === 1) {
-        const onlySelectedCellId = this.selectionState.selectedCellIds.values().next().value;
-        if (onlySelectedCellId !== dragStartCellId) {
-          wasActualDrag = true;
-        }
       }
 
       if (wasActualDrag) {
@@ -604,16 +589,16 @@ export class CustomSelectionController {
           rowIndex: startRowIndex,
           colId: startColId
         };
-        console.log('🔳 拖拽完成 (实际拖拽)，新的锚点已设置为拖拽起始点:', this.selectionState.shiftSelectionAnchorCell);
       } else {
         // 如果只是一个点击 (鼠标没有有效移动以选择其他单元格),
         // 则不应在此处更改 shiftSelectionAnchorCell。
         // handleCellClick 将为简单点击管理它。
-        console.log('🔳 点击 (非实际拖拽) 完成，onTableMouseUp 未更改 shiftSelectionAnchorCell。');
       }
       
       // 清除拖拽状态
       this.selectionState.dragStartState = null;
+    } else {
+      // Log if mouseup is called without an active drag state, for completeness
     }
   }
 }
