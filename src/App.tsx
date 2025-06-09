@@ -167,7 +167,8 @@ const App: React.FC = () => {
 
   // 单元格点击处理
   const onCellClicked = useCallback((params: CellClickedEvent) => {
-    console.log('单元格点击:', params);
+    console.log('🖱️ 单元格点击事件:', params);
+    
     if (selectionControllerRef.current) {
       selectionControllerRef.current.onCellClicked(params);
       updateSelectionInfo();
@@ -176,6 +177,8 @@ const App: React.FC = () => {
 
   // 右键菜单处理
   const getContextMenuItems = useCallback((params: GetContextMenuItemsParams): (string | MenuItemDef)[] => {
+    console.log('获取右键菜单项:', params);
+    
     if (contextMenuProviderRef.current) {
       return contextMenuProviderRef.current.getContextMenuItems(params);
     }
@@ -290,7 +293,7 @@ const App: React.FC = () => {
           // 拖拽开始，添加 document 级别的监听器
           const handleDocumentMouseMove = (moveEvent: MouseEvent) => {
             const currentCell = getCellInfoFromMouseEvent(moveEvent);
-            selectionControllerRef.current?.onTableMouseMove(moveEvent, currentCell);
+            selectionControllerRef.current?.onTableMouseMove(currentCell);
           };
 
           const handleDocumentMouseUp = () => {
@@ -474,6 +477,8 @@ const App: React.FC = () => {
             return params.nextCellPosition || params.previousCellPosition;
           }}
         />
+        {/* 调试：禁用 Ctrl-only 触发，确保右键直出菜单 */}
+        allowContextMenuWithControlKey={false}
       </div>
     </div>
   );

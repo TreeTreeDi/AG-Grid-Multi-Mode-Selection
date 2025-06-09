@@ -14,8 +14,7 @@ export class CopyHandler {
     selectionController: CustomSelectionController,
     permissions: MenuPermissions = {
       COPY_CELL: true,
-      COPY_ROW: true,
-      COPY_COLUMN: true,
+      COPY_ROW_COLUMN_ALL: true,
       VIEW_DETAILS: true,
       CLONE_DATA: true,
       GENERATE_RESULT_SET: true
@@ -30,7 +29,7 @@ export class CopyHandler {
   // 复制列数据
   copyColumnData(includeHeaders = false): Promise<void> {
     const context = this.selectionController.getCurrentSelectionContext();
-    if (!context.hasSelectedColumns || !this.permissions.COPY_COLUMN) {
+    if (!context.hasSelectedColumns || !this.permissions.COPY_ROW_COLUMN_ALL) {
       return Promise.reject(new Error('没有选中的列或没有复制权限'));
     }
 
@@ -71,7 +70,7 @@ export class CopyHandler {
   // 复制行数据
   copyRowData(includeHeaders = false): Promise<void> {
     const selectedRows = this.gridApi.getSelectedRows();
-    if (selectedRows.length === 0 || !this.permissions.COPY_ROW) {
+    if (selectedRows.length === 0 || !this.permissions.COPY_ROW_COLUMN_ALL) {
       return Promise.reject(new Error('没有选中的行或没有复制权限'));
     }
 

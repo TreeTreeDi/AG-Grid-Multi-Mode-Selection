@@ -1,7 +1,7 @@
 import type { GetContextMenuItemsParams, MenuItemDef } from 'ag-grid-community';
 import type { CustomSelectionController } from './CustomSelectionController';
 import type { CopyHandler } from './CopyHandler';
-import type { SelectionContext, MenuPermissions } from '../types/selection';
+import type { SelectionContext, MenuPermissions, ContextMenuArea } from '../types/selection';
 
 export class ContextMenuProvider {
   private selectionController: CustomSelectionController;
@@ -13,8 +13,7 @@ export class ContextMenuProvider {
     copyHandler: CopyHandler,
     permissions: MenuPermissions = {
       COPY_CELL: true,
-      COPY_ROW: true,
-      COPY_COLUMN: true,
+      COPY_ROW_COLUMN_ALL: true,
       VIEW_DETAILS: true,
       CLONE_DATA: true,
       GENERATE_RESULT_SET: true
@@ -26,19 +25,29 @@ export class ContextMenuProvider {
   }
 
   // 获取上下文菜单项
-  getContextMenuItems = (_params: GetContextMenuItemsParams): (string | MenuItemDef)[] => {
+  getContextMenuItems = (params: GetContextMenuItemsParams): (string | MenuItemDef)[] => {
     const context = this.selectionController.getCurrentSelectionContext();
-    const menuItems: (string | MenuItemDef)[] = [];
+    const clickArea = this.determineClickArea(params, context);
+    
+    let menuItems: (string | MenuItemDef)[] = [];
 
-    // 根据选择类型提供不同的菜单项
-    if (context.hasSelectedColumns) {
-      menuItems.push(...this.getColumnMenuItems(context));
-    } else if (context.hasSelectedRows) {
-      menuItems.push(...this.getRowMenuItems(context));
-    } else if (context.hasSelectedCells) {
-      menuItems.push(...this.getCellMenuItems(context));
-    } else {
-      menuItems.push(...this.getDefaultMenuItems());
+    // 根据点击区域和选择状态生成菜单项
+    switch (clickArea) {
+      case 'column-header':
+        menuItems = this.getColumnHeaderMenuItems();
+        break;
+      case 'row-area':
+        menuItems = this.getRowAreaMenuItems(context);
+        break;
+      case 'single-cell':
+        menuItems = this.getSingleCellMenuItems();
+        break;
+      case 'multiple-cells':
+        menuItems = this.getMultipleCellsMenuItems();
+        break;
+      default:
+        menuItems = this.getDefaultMenuItems();
+        break;
     }
 
     // 添加分隔符和通用菜单项
@@ -50,34 +59,83 @@ export class ContextMenuProvider {
     return menuItems;
   };
 
-  // 列选择菜单项
-  private getColumnMenuItems(context: SelectionContext): MenuItemDef[] {
+  // 确定右键点击区域
+  private determineClickArea(params: GetContextMenuItemsParams, context: SelectionContext): ContextMenuArea {
+    console.log('右键菜单参数:', params);
+    console.log('选择上下文:', context);
+
+    // 如果点击了列头
+    if (params.column && !params.node) {
+      console.log('检测到列头点击');
+      return 'column-header';
+    }
+
+    // 如果点击了行区域（行号列或选择框列）
+    if (params.node && params.column) {
+      const colId = params.column.getColId();
+      console.log('点击的列ID:', colId);
+      
+      if (colId === 'rowNumber' ||
+          params.column.getColDef().checkboxSelection ||
+          params.column.getColDef().headerCheckboxSelection) {
+        console.log('检测到行区域点击');
+        return 'row-area';
+      }
+    }
+
+    // 如果有单元格选择
+    if (context.hasSelectedCells) {
+      console.log('检测到单元格选择');
+      // 根据选择的单元格数量判断
+      if (context.isSingleCell) {
+        console.log('单个单元格选择');
+        return 'single-cell';
+      } else {
+        console.log('多个单元格选择');
+        return 'multiple-cells';
+      }
+    }
+
+    // 如果有行选择但不是点击行号列，也当作行区域处理
+    if (context.hasSelectedRows) {
+      console.log('检测到行选择');
+      return 'row-area';
+    }
+
+    // 如果点击了普通单元格但没有选择，默认当作单元格处理
+    if (params.node && params.column) {
+      console.log('检测到普通单元格点击，默认为单元格');
+      return 'single-cell';
+    }
+
+    console.log('未知点击区域');
+    return 'unknown';
+  }
+
+  // 列头右键菜单
+  private getColumnHeaderMenuItems(): MenuItemDef[] {
     const items: MenuItemDef[] = [];
 
+    // 复制标题
     items.push({
-      name: '复制列标题',
-      action: () => this.handleMenuAction(() => this.copyHandler.copyColumnHeaders()),
+      name: '复制标题',
+      action: () => this.handleMenuAction('复制标题'),
       icon: '<span>📋</span>'
     });
 
-    if (this.permissions.COPY_COLUMN) {
-      items.push({
-        name: `复制列数据 (${context.selectedColumnCount}列)`,
-        action: () => this.handleMenuAction(() => this.copyHandler.copyColumnData(false)),
-        icon: '<span>📊</span>'
-      });
+    // 复制列数据（受权限控制）
+    items.push({
+      name: '复制列数据',
+      action: () => this.handleMenuAction('复制列数据'),
+      icon: '<span>📊</span>',
+      disabled: !this.permissions.COPY_ROW_COLUMN_ALL
+    });
 
-      items.push({
-        name: '复制列数据(含标题)',
-        action: () => this.handleMenuAction(() => this.copyHandler.copyColumnData(true)),
-        icon: '<span>📈</span>'
-      });
-    }
-
+    // 结果集生成
     if (this.permissions.GENERATE_RESULT_SET) {
       items.push({
         name: '结果集生成',
-        action: () => this.generateResultSet(context),
+        action: () => this.handleMenuAction('结果集生成'),
         icon: '<span>⚙️</span>'
       });
     }
@@ -85,58 +143,62 @@ export class ContextMenuProvider {
     return items;
   }
 
-  // 行选择菜单项
-  private getRowMenuItems(context: SelectionContext): MenuItemDef[] {
+  // 行区域右键菜单
+  private getRowAreaMenuItems(context: SelectionContext): MenuItemDef[] {
     const items: MenuItemDef[] = [];
 
+    // 查看（原查看单行，改名为查看）
     if (this.permissions.VIEW_DETAILS && context.selectedRowCount === 1) {
       items.push({
-        name: '查看单行',
-        action: () => this.viewRowDetails(context),
+        name: '查看',
+        action: () => this.handleMenuAction('查看'),
         icon: '<span>👁️</span>'
       });
     }
 
-    if (this.permissions.COPY_ROW) {
-      const rowText = context.selectedRowCount === 1 ? '单行' : `多行(${context.selectedRowCount}行)`;
-      items.push({
-        name: `复制${rowText}`,
-        action: () => this.handleMenuAction(() => this.copyHandler.copyRowData(false)),
-        icon: '<span>📋</span>'
-      });
+    // 复制（原复制单行/多行，改名为复制）
+    const rowText = context.selectedRowCount === 1 ? '单行' : `多行(${context.selectedRowCount}行)`;
+    items.push({
+      name: '复制',
+      action: () => this.handleMenuAction(`复制${rowText}`),
+      icon: '<span>📋</span>'
+    });
 
-      items.push({
-        name: '复制标题',
-        action: () => this.copyHeaders(),
-        icon: '<span>🏷️</span>'
-      });
-
-      items.push({
-        name: '与标题一起复制',
-        action: () => this.handleMenuAction(() => this.copyHandler.copyRowData(true)),
-        icon: '<span>📊</span>'
-      });
-    }
-
+    // 复制全部
     items.push({
       name: '复制全部',
-      action: () => this.handleMenuAction(() => this.copyHandler.copyAllData(true)),
+      action: () => this.handleMenuAction('复制全部'),
       icon: '<span>📈</span>'
     });
 
+    // 复制标题（只保留复制全部标题功能，不需要有二级菜单）
+    items.push({
+      name: '复制标题',
+      action: () => this.handleMenuAction('复制标题'),
+      icon: '<span>🏷️</span>'
+    });
+
+    // 与标题一起复制
+    items.push({
+      name: '与标题一起复制',
+      action: () => this.handleMenuAction('与标题一起复制'),
+      icon: '<span>📊</span>'
+    });
+
+    // 克隆（原克隆单行/多行，改名为克隆）
     if (this.permissions.CLONE_DATA) {
-      const rowText = context.selectedRowCount === 1 ? '单行' : `多行(${context.selectedRowCount}行)`;
       items.push({
-        name: `克隆${rowText}`,
-        action: () => this.cloneRows(context),
+        name: '克隆',
+        action: () => this.handleMenuAction('克隆'),
         icon: '<span>🔄</span>'
       });
     }
 
+    // 结果集生成
     if (this.permissions.GENERATE_RESULT_SET) {
       items.push({
         name: '结果集生成',
-        action: () => this.generateResultSet(context),
+        action: () => this.handleMenuAction('结果集生成'),
         icon: '<span>⚙️</span>'
       });
     }
@@ -144,49 +206,100 @@ export class ContextMenuProvider {
     return items;
   }
 
-  // 单元格选择菜单项
-  private getCellMenuItems(context: SelectionContext): MenuItemDef[] {
+  // 单个单元格右键菜单
+  private getSingleCellMenuItems(): MenuItemDef[] {
     const items: MenuItemDef[] = [];
 
-    if (this.permissions.VIEW_DETAILS && context.isSingleCell) {
+    // 查看单元格
+    if (this.permissions.VIEW_DETAILS) {
       items.push({
         name: '查看单元格',
-        action: () => this.viewCellDetails(context),
+        action: () => this.handleMenuAction('查看单元格'),
         icon: '<span>👁️</span>'
       });
     }
 
+    // 复制（原复制单元格，更名为复制）
     if (this.permissions.COPY_CELL) {
-      const cellText = context.isSingleCell ? '单元格' : `多单元格(${context.cellRangeCount}个范围)`;
       items.push({
-        name: `复制${cellText}`,
-        action: () => this.handleMenuAction(() => this.copyHandler.copyCellData()),
+        name: '复制',
+        action: () => this.handleMenuAction('复制单元格'),
         icon: '<span>📋</span>'
       });
     }
 
+    // 复制全部
     items.push({
       name: '复制全部',
-      action: () => this.handleMenuAction(() => this.copyHandler.copyAllData(true)),
+      action: () => this.handleMenuAction('复制全部'),
       icon: '<span>📈</span>'
     });
 
+    // 复制标题
     items.push({
-      name: '复制单元格标题',
-      action: () => this.handleMenuAction(() => this.copyHandler.copyCellHeaders()),
+      name: '复制标题',
+      action: () => this.handleMenuAction('复制标题'),
       icon: '<span>🏷️</span>'
     });
 
+    // 与标题一起复制
     items.push({
       name: '与标题一起复制',
-      action: () => this.copyCellDataWithHeaders(context),
+      action: () => this.handleMenuAction('与标题一起复制'),
       icon: '<span>📊</span>'
     });
 
+    // 结果集生成
     if (this.permissions.GENERATE_RESULT_SET) {
       items.push({
         name: '结果集生成',
-        action: () => this.generateResultSet(context),
+        action: () => this.handleMenuAction('结果集生成'),
+        icon: '<span>⚙️</span>'
+      });
+    }
+
+    return items;
+  }
+
+  // 多个单元格右键菜单
+  private getMultipleCellsMenuItems(): MenuItemDef[] {
+    const items: MenuItemDef[] = [];
+
+    // 复制（原复制单元格，更名为复制）
+    if (this.permissions.COPY_CELL) {
+      items.push({
+        name: '复制',
+        action: () => this.handleMenuAction('复制多单元格'),
+        icon: '<span>📋</span>'
+      });
+    }
+
+    // 复制全部
+    items.push({
+      name: '复制全部',
+      action: () => this.handleMenuAction('复制全部'),
+      icon: '<span>📈</span>'
+    });
+
+    // 复制标题（无二级菜单，复制标题就是复制当前选中单元格的标题）
+    items.push({
+      name: '复制标题',
+      action: () => this.handleMenuAction('复制选中单元格标题'),
+      icon: '<span>🏷️</span>'
+    });
+
+    // 与标题一起复制
+    items.push({
+      name: '与标题一起复制',
+      action: () => this.handleMenuAction('与标题一起复制'),
+      icon: '<span>📊</span>'
+    });
+
+    // 结果集生成
+    if (this.permissions.GENERATE_RESULT_SET) {
+      items.push({
+        name: '结果集生成',
+        action: () => this.handleMenuAction('结果集生成'),
         icon: '<span>⚙️</span>'
       });
     }
@@ -199,7 +312,7 @@ export class ContextMenuProvider {
     return [
       {
         name: '复制全部',
-        action: () => this.handleMenuAction(() => this.copyHandler.copyAllData(true)),
+        action: () => this.handleMenuAction('复制全部'),
         icon: '<span>📈</span>'
       }
     ];
@@ -221,109 +334,10 @@ export class ContextMenuProvider {
     ];
   }
 
-  // 处理菜单操作
-  private async handleMenuAction(action: () => Promise<void>): Promise<void> {
-    try {
-      await action();
-      this.showSuccessMessage('操作成功完成');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '操作失败';
-      this.showErrorMessage(message);
-    }
-  }
-
-  // 查看行详情
-  private viewRowDetails(context: SelectionContext): void {
-    if (context.selectedRows.length === 1) {
-      const rowData = context.selectedRows[0].data;
-      const details = JSON.stringify(rowData, null, 2);
-      
-      // 创建详情窗口
-      const modal = this.createModal('行详情', `<pre>${details}</pre>`);
-      document.body.appendChild(modal);
-    }
-  }
-
-  // 查看单元格详情
-  private viewCellDetails(context: SelectionContext): void {
-    if (context.cellRanges.length === 1) {
-      const range = context.cellRanges[0];
-      const details = {
-        startRow: range.startRow,
-        endRow: range.endRow,
-        columns: range.columns.map(col => ({
-          id: col.getColId(),
-          headerName: col.getColDef().headerName
-        }))
-      };
-      
-      const detailsText = JSON.stringify(details, null, 2);
-      const modal = this.createModal('单元格详情', `<pre>${detailsText}</pre>`);
-      document.body.appendChild(modal);
-    }
-  }
-
-  // 复制标题
-  private copyHeaders(): void {
-    this.handleMenuAction(() => {
-      // 获取所有显示的列标题
-      const allColumns = this.copyHandler['columnApi'].getAllDisplayedColumns();
-      if (!allColumns) {
-        return Promise.reject(new Error('无法获取列信息'));
-      }
-      
-      const headers = allColumns.map(col => 
-        col.getColDef().headerName || col.getColId()
-      );
-      
-      const text = headers.join('\t');
-      return this.copyHandler['writeToClipboard'](text);
-    });
-  }
-
-  // 复制单元格数据与标题
-  private copyCellDataWithHeaders(_context: SelectionContext): void {
-    // 这里可以实现更复杂的单元格数据与标题一起复制的逻辑
-    this.handleMenuAction(() => this.copyHandler.copyCellData());
-  }
-
-  // 克隆行
-  private cloneRows(context: SelectionContext): void {
-    const selectedRows = context.selectedRows.map(node => ({ ...node.data }));
-    const clonedData = JSON.stringify(selectedRows, null, 2);
-    
-    const modal = this.createModal(
-      '克隆的行数据',
-      `<div>
-        <p>已克隆 ${selectedRows.length} 行数据:</p>
-        <pre style="max-height: 300px; overflow-y: auto;">${clonedData}</pre>
-        <button onclick="this.closest('.ag-modal').remove()">关闭</button>
-      </div>`
-    );
-    document.body.appendChild(modal);
-  }
-
-  // 生成结果集
-  private generateResultSet(context: SelectionContext): void {
-    const resultSet = {
-      selectionMode: context.selectionMode,
-      timestamp: new Date().toISOString(),
-      rowCount: context.selectedRowCount,
-      columnCount: context.selectedColumnCount,
-      cellRangeCount: context.cellRangeCount,
-      data: this.selectionController.getSelectedData()
-    };
-    
-    const resultText = JSON.stringify(resultSet, null, 2);
-    const modal = this.createModal(
-      '结果集',
-      `<div>
-        <pre style="max-height: 400px; overflow-y: auto;">${resultText}</pre>
-        <button onclick="navigator.clipboard.writeText(\`${resultText.replace(/`/g, '\\`')}\`)">复制结果集</button>
-        <button onclick="this.closest('.ag-modal').remove()">关闭</button>
-      </div>`
-    );
-    document.body.appendChild(modal);
+  // 处理菜单操作（占位符实现）
+  private handleMenuAction(actionName: string): void {
+    console.log(`菜单操作: ${actionName}`);
+    this.showSuccessMessage(`${actionName} 功能暂未实现`);
   }
 
   // 清除所有选择
@@ -334,49 +348,7 @@ export class ContextMenuProvider {
 
   // 刷新表格
   private refreshGrid(): void {
-    // 这里可以触发表格刷新逻辑
     this.showSuccessMessage('表格已刷新');
-  }
-
-  // 创建模态窗口
-  private createModal(title: string, content: string): HTMLElement {
-    const modal = document.createElement('div');
-    modal.className = 'ag-modal';
-    modal.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      z-index: 10000;
-      min-width: 300px;
-      max-width: 80vw;
-      max-height: 80vh;
-      overflow: auto;
-    `;
-    
-    modal.innerHTML = `
-      <div style="padding: 16px; border-bottom: 1px solid #eee;">
-        <h3 style="margin: 0; font-size: 16px;">${title}</h3>
-        <button onclick="this.closest('.ag-modal').remove()" 
-                style="float: right; margin-top: -20px; border: none; background: none; font-size: 18px; cursor: pointer;">×</button>
-      </div>
-      <div style="padding: 16px;">
-        ${content}
-      </div>
-    `;
-
-    // 点击外部关闭
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.remove();
-      }
-    });
-
-    return modal;
   }
 
   // 显示成功消息
